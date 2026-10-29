@@ -1,0 +1,7 @@
+# dados locais (posicao, opcoes, log de quedas)
+config.json
+quedas.log
+
+# saidas do diagnostico (gravacoes de voz)
+*.wav
+diag.csv
