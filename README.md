@@ -13,6 +13,9 @@ Funciona no Windows 10/11 com o Windows PowerShell 5.1.
 - **Medidor de voz**: mostra em tempo real o nível do que está sendo captado. O medidor é passivo: não abre o
   microfone sozinho, então o fone não fica preso no perfil Hands-Free.
 - **Fone desligado**: o widget encolhe para um selo cinza `AE01 off` e volta sozinho quando o fone reconecta.
+- **Ícone perto do relógio**: um microfone na área de notificação com a cor do estado (verde, amarelo, vermelho ou
+  cinza) e um ponto roxo quando a ponte de voz está ativa. Passando o mouse, mostra o volume e o ganho.
+- **Ocultar**: o widget pode ficar escondido, só com o ícone perto do relógio. O estado fica salvo entre reinícios.
 - **Log de quedas** (`quedas.log`): registra cada queda de volume com os apps que estavam usando o microfone,
   e cada conexão e desconexão do fone. Serve para descobrir quem está baixando o volume.
 - **Melhorar voz** (requer [VB-CABLE](https://vb-audio.com/Cable/)): quando algum app capta do microfone
@@ -34,7 +37,11 @@ Funciona no Windows 10/11 com o Windows PowerShell 5.1.
   - Voltar volume do mic para 100%
   - Manter volume em 100% automaticamente
   - Abrir log
+  - Ocultar (fica só o ícone perto do relógio)
   - Fechar
+- **Ícone perto do relógio**: clique esquerdo mostra ou oculta o widget. O botão direito abre um menu com Mostrar widget,
+  Melhorar voz, Ganho da voz, Abrir log e Fechar.
+- Se a posição salva ficar fora da tela (por exemplo, atrás da barra de tarefas), o widget volta sozinho para a área visível.
 
 ## Instalação
 
@@ -54,6 +61,7 @@ Funciona no Windows 10/11 com o Windows PowerShell 5.1.
 | `MicPadraoCable` | `true` | Mantém o CABLE Output como mic padrão enquanto o fone estiver ligado |
 | `MicSemFone` | `Grupo de microfones` | Mic que vira padrão quando o fone desliga |
 | `ManterEm100` | `false` | Restaura o volume do mic para 100% sempre que cair |
+| `Oculto` | `false` | Abre com o widget oculto, só com o ícone perto do relógio |
 
 ## Diagnóstico (`MicDiag.ps1`)
 

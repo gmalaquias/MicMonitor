@@ -143,6 +143,8 @@ public static class MicVol {
   }
 }
 
+public static class Win32Icon { [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h); }
+
 // Ponte de voz: fone (RAW, sem efeitos do Windows/Intel) -> ganho + limitador -> CABLE Input
 public static class VoiceBridge {
   public static volatile bool Running; public static volatile string LastError; public static volatile float GainDb = 15f;
@@ -238,7 +240,7 @@ $logFile  = Join-Path $dir 'quedas.log'
 $cfgFile  = Join-Path $dir 'config.json'
 $alerta   = 80   # abaixo disso fica amarelo; abaixo de 40, vermelho
 $padroes  = @{ Left = $null; Top = $null; ManterEm100 = $false; Alvo = 'AE01'; MelhorarVoz = $true; GanhoDb = 15
-               MicPadraoCable = $true; MicSemFone = 'Grupo de microfones' }
+               MicPadraoCable = $true; MicSemFone = 'Grupo de microfones'; Oculto = $false }
 
 $cfg = [pscustomobject]@{}
 if (Test-Path $cfgFile) { try { $cfg = Get-Content $cfgFile -Raw | ConvertFrom-Json } catch { $cfg = [pscustomobject]@{} } }
@@ -326,21 +328,21 @@ function Write-Log([string]$msg) {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent" Topmost="True"
         ShowInTaskbar="False" SizeToContent="WidthAndHeight" ResizeMode="NoResize" Title="MicMonitor">
-  <Border Name="Card" CornerRadius="8" Background="#E6202020" Padding="10,6" BorderThickness="1.5" BorderBrush="#555555">
+  <Border Name="Card" CornerRadius="6" Background="#E6202020" Padding="7,3" BorderThickness="1" BorderBrush="#555555">
     <StackPanel Orientation="Horizontal">
-      <TextBlock Name="Rotulo" Text="Mic" Foreground="#DDDDDD" FontSize="12" VerticalAlignment="Center"/>
-      <StackPanel Name="Detalhes" Orientation="Horizontal" Margin="8,0,0,0">
-        <Grid Width="70" Height="8" VerticalAlignment="Center">
-          <Border Background="#444444" CornerRadius="4"/>
-          <Border Name="Barra" Background="#3CB371" CornerRadius="4" HorizontalAlignment="Left" Width="0"/>
+      <TextBlock Name="Rotulo" Text="Mic" Foreground="#DDDDDD" FontSize="10" VerticalAlignment="Center"/>
+      <StackPanel Name="Detalhes" Orientation="Horizontal" Margin="5,0,0,0">
+        <Grid Width="40" Height="5" VerticalAlignment="Center">
+          <Border Background="#444444" CornerRadius="2.5"/>
+          <Border Name="Barra" Background="#3CB371" CornerRadius="2.5" HorizontalAlignment="Left" Width="0"/>
         </Grid>
-        <TextBlock Name="Pct" Text="--" Foreground="White" FontWeight="Bold" FontSize="14" Width="50"
-                   TextAlignment="Right" VerticalAlignment="Center" Margin="6,0,0,0"/>
-        <Border Width="1" Background="#555555" Margin="10,2,10,2"/>
-        <TextBlock Name="VozRotulo" Text="voz" Foreground="#888888" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
-        <Grid Width="60" Height="8" VerticalAlignment="Center">
-          <Border Background="#444444" CornerRadius="4"/>
-          <Border Name="Voz" Background="#4FC3F7" CornerRadius="4" HorizontalAlignment="Left" Width="0"/>
+        <TextBlock Name="Pct" Text="--" Foreground="White" FontWeight="Bold" FontSize="11" Width="34"
+                   TextAlignment="Right" VerticalAlignment="Center" Margin="3,0,0,0"/>
+        <Border Width="1" Background="#555555" Margin="6,2,6,2"/>
+        <TextBlock Name="VozRotulo" Text="voz" Foreground="#888888" FontSize="10" VerticalAlignment="Center" Margin="0,0,4,0"/>
+        <Grid Width="34" Height="5" VerticalAlignment="Center">
+          <Border Background="#444444" CornerRadius="2.5"/>
+          <Border Name="Voz" Background="#4FC3F7" CornerRadius="2.5" HorizontalAlignment="Left" Width="0"/>
         </Grid>
       </StackPanel>
     </StackPanel>
@@ -386,12 +388,7 @@ $miVoz  = New-Object System.Windows.Controls.MenuItem; $miVoz.Header = 'Melhorar
 $miGanho = New-Object System.Windows.Controls.MenuItem; $miGanho.Header = 'Ganho da voz'
 foreach ($db in 6, 9, 12, 15, 18, 21, 24) {
     $mi = New-Object System.Windows.Controls.MenuItem; $mi.Header = "+$db dB"; $mi.Tag = $db; $mi.IsCheckable = $true; $mi.IsChecked = ($cfg.GanhoDb -eq $db)
-    $mi.Add_Click({
-        param($s, $e)
-        $cfg.GanhoDb = [int]$s.Tag; [VoiceBridge]::GainDb = [float]$cfg.GanhoDb; Save-Config
-        foreach ($i in $miGanho.Items) { $i.IsChecked = ($i.Tag -eq $cfg.GanhoDb) }
-        Write-Log "Melhorar voz: ganho alterado para +$($cfg.GanhoDb) dB"
-    })
+    $mi.Add_Click({ param($s, $e) Set-Ganho ([int]$s.Tag) })
     [void]$miGanho.Items.Add($mi)
 }
 $miPadrao = New-Object System.Windows.Controls.MenuItem; $miPadrao.Header = 'Manter CABLE Output como mic padrao do Windows'; $miPadrao.IsCheckable = $true; $miPadrao.IsChecked = [bool]$cfg.MicPadraoCable
@@ -400,18 +397,88 @@ $miFull = New-Object System.Windows.Controls.MenuItem; $miFull.Header = 'Voltar 
 $miKeep = New-Object System.Windows.Controls.MenuItem; $miKeep.Header = 'Manter volume em 100% automaticamente'; $miKeep.IsCheckable = $true; $miKeep.IsChecked = [bool]$cfg.ManterEm100
 $miLog  = New-Object System.Windows.Controls.MenuItem; $miLog.Header = 'Abrir log'
 $miExit = New-Object System.Windows.Controls.MenuItem; $miExit.Header = 'Fechar'
-$miVoz.Add_Click({ $cfg.MelhorarVoz = $miVoz.IsChecked; Save-Config; if (-not $cfg.MelhorarVoz) { Stop-Ponte 'desativado no menu'; Set-MicPadrao $false -Forcar } })
+$miOcultar = New-Object System.Windows.Controls.MenuItem; $miOcultar.Header = 'Ocultar (fica no icone perto do relogio)'
+$miOcultar.Add_Click({ Switch-Widget $false })
+$miVoz.Add_Click({ Set-MelhorarVoz $miVoz.IsChecked })
 $miFull.Add_Click({ if ($script:alvo) { [MicVol]::SetFull($script:alvo.Id); Write-Log 'Restaurado para 100% (manual)' } })
 $miKeep.Add_Click({ $cfg.ManterEm100 = $miKeep.IsChecked; Save-Config })
 $miLog.Add_Click({ if (-not (Test-Path $logFile)) { Write-Log 'Log criado' }; Start-Process notepad.exe $logFile })
 $miExit.Add_Click({ $win.Close() })
-foreach ($i in $miVoz, $miGanho, $miPadrao, (New-Object System.Windows.Controls.Separator), $miFull, $miKeep, $miLog, (New-Object System.Windows.Controls.Separator), $miExit) { [void]$menu.Items.Add($i) }
+foreach ($i in $miVoz, $miGanho, $miPadrao, (New-Object System.Windows.Controls.Separator), $miFull, $miKeep, $miLog, $miOcultar, (New-Object System.Windows.Controls.Separator), $miExit) { [void]$menu.Items.Add($i) }
 $card.ContextMenu = $menu
+
+function Set-MelhorarVoz([bool]$ligar) {
+    $cfg.MelhorarVoz = $ligar; $miVoz.IsChecked = $ligar; Save-Config
+    if (-not $ligar) { Stop-Ponte 'desativado no menu'; Set-MicPadrao $false -Forcar }
+}
+
+function Set-Ganho([int]$db) {
+    $cfg.GanhoDb = $db; [VoiceBridge]::GainDb = [float]$db; Save-Config
+    foreach ($i in $miGanho.Items) { $i.IsChecked = ($i.Tag -eq $db) }
+    Write-Log "Melhorar voz: ganho alterado para +$db dB"
+}
+
+function Switch-Widget([bool]$mostrar) {
+    if ($mostrar) { $win.Show(); $win.Topmost = $true; Set-PosicaoVisivel } else { $win.Hide() }
+    $cfg.Oculto = -not $mostrar; Save-Config
+}
+
+# Icone perto do relogio: microfone na cor do estado (+ ponto roxo com "Melhorar voz" ativo).
+# Clique = mostra/oculta o widget; botao direito = menu.
+$tray = New-Object System.Windows.Forms.NotifyIcon
+$script:trayEstado = $null
+$script:trayHicon = [IntPtr]::Zero
+
+function Update-Tray([string]$cor, [string]$texto) {
+    $chave = "$cor|$($script:ponte)"
+    if ($chave -ne $script:trayEstado) {
+        $bmp = New-Object System.Drawing.Bitmap 32, 32
+        $g = [System.Drawing.Graphics]::FromImage($bmp); $g.SmoothingMode = 'AntiAlias'
+        $c = [System.Drawing.ColorTranslator]::FromHtml($cor)
+        $br = New-Object System.Drawing.SolidBrush $c
+        $pen = New-Object System.Drawing.Pen $c, 3
+        $g.FillEllipse($br, 10, 1, 12, 12); $g.FillRectangle($br, 10, 7, 12, 8); $g.FillEllipse($br, 10, 9, 12, 12)
+        $g.DrawArc($pen, 5, 6, 22, 19, 0, 180)
+        $g.DrawLine($pen, 16, 25, 16, 30); $g.DrawLine($pen, 10, 30, 22, 30)
+        if ($script:ponte) { $g.FillEllipse((New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml('#B388FF'))), 21, 0, 11, 11) }
+        $g.Dispose()
+        $h = $bmp.GetHicon(); $tray.Icon = [System.Drawing.Icon]::FromHandle($h); $bmp.Dispose()
+        if ($script:trayHicon -ne [IntPtr]::Zero) { [void][Win32Icon]::DestroyIcon($script:trayHicon) }
+        $script:trayHicon = $h; $script:trayEstado = $chave
+    }
+    if ($texto.Length -gt 63) { $texto = $texto.Substring(0, 63) }
+    $tray.Text = $texto
+}
+
+$trayMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$tMostrar = New-Object System.Windows.Forms.ToolStripMenuItem 'Mostrar widget'
+$tVoz     = New-Object System.Windows.Forms.ToolStripMenuItem 'Melhorar voz'
+$tGanho   = New-Object System.Windows.Forms.ToolStripMenuItem 'Ganho da voz'
+foreach ($db in 6, 9, 12, 15, 18, 21, 24) {
+    $it = New-Object System.Windows.Forms.ToolStripMenuItem "+$db dB"; $it.Tag = $db
+    $it.Add_Click({ param($s, $e) Set-Ganho ([int]$s.Tag) })
+    [void]$tGanho.DropDownItems.Add($it)
+}
+$tLog  = New-Object System.Windows.Forms.ToolStripMenuItem 'Abrir log'
+$tSair = New-Object System.Windows.Forms.ToolStripMenuItem 'Fechar'
+$tMostrar.Add_Click({ Switch-Widget (-not $win.IsVisible) })
+$tVoz.Add_Click({ Set-MelhorarVoz (-not $cfg.MelhorarVoz) })
+$tLog.Add_Click({ if (-not (Test-Path $logFile)) { Write-Log 'Log criado' }; Start-Process notepad.exe $logFile })
+$tSair.Add_Click({ $win.Close() })
+foreach ($i in $tMostrar, $tVoz, $tGanho, $tLog, (New-Object System.Windows.Forms.ToolStripSeparator), $tSair) { [void]$trayMenu.Items.Add($i) }
+$trayMenu.Add_Opening({
+    $tMostrar.Checked = $win.IsVisible; $tVoz.Checked = [bool]$cfg.MelhorarVoz
+    foreach ($it in $tGanho.DropDownItems) { $it.Checked = ($it.Tag -eq $cfg.GanhoDb) }
+})
+$tray.ContextMenuStrip = $trayMenu
+$tray.Add_MouseClick({ param($s, $e) if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Switch-Widget (-not $win.IsVisible) } })
+Update-Tray '#888888' 'MicMonitor'
+$tray.Visible = $true
 
 $win.Add_MouseLeftButtonDown({
     param($s, $e)
     if ($e.ClickCount -eq 2) { if ($script:alvo) { [MicVol]::SetFull($script:alvo.Id); Write-Log 'Restaurado para 100% (duplo clique)' } }
-    else { try { $win.DragMove(); Save-Config } catch {} }
+    else { try { $win.DragMove(); Set-PosicaoVisivel; Save-Config } catch {} }
 })
 
 $verde    = [Windows.Media.Brushes]::MediumSeaGreen
@@ -472,6 +539,7 @@ $tick = {
         }
         $script:conectado = $false; $script:anterior = $null
         Update-Cable; Set-MicPadrao $false
+        Update-Tray '#888888' "$($cfg.Alvo) desligado"
         if (((Get-Date) - $script:ultimaBusca).TotalSeconds -ge 5) { $script:alvo = $null }   # pode ter sido pareado de novo
         return
     }
@@ -495,12 +563,15 @@ $tick = {
 
     $cor = if ($mute -or $p -lt 40) { $vermelho } elseif ($p -lt $alerta) { $amarelo } else { $verde }
     $pct.Text = if ($mute) { 'MUDO' } else { "$p%" }
-    $barra.Width = 70 * [Math]::Min(100, $p) / 100
+    $barra.Width = 40 * [Math]::Min(100, $p) / 100
     $barra.Background = $cor
     $card.BorderBrush = if ($cor -eq $verde) { $cinza } else { $cor }
 
     Update-Cable; Set-MicPadrao $true
     Update-Ponte
+
+    $corHex = if ($mute -or $p -lt 40) { '#CD5C5C' } elseif ($p -lt $alerta) { '#DAA520' } else { '#3CB371' }
+    Update-Tray $corHex ("$($cfg.Alvo) mic $($pct.Text)" + $(if ($script:ponte) { " | voz +$($cfg.GanhoDb) dB" } else { '' }))
 }
 
 $script:micAtivo = $false
@@ -526,22 +597,27 @@ $tickVoz = {
     }
     $alvoNivel = if ($peak -le 0.001) { 0.0 } else { [Math]::Min(1.0, [Math]::Max(0.0, (20 * [Math]::Log10($peak) + 60) / 60)) }
     $script:nivel = [Math]::Max($alvoNivel, $script:nivel * 0.85)
-    $voz.Width = 60 * $script:nivel
+    $voz.Width = 34 * $script:nivel
     $vozRot.Foreground = [Windows.Media.Brushes]::LightGray
 }
 
-$win.Add_SizeChanged({
-    param($s, $e)
-    # ao encolher/crescer, mantem a borda direita no lugar (o widget fica perto da bandeja)
-    if ($e.PreviousSize.Width -gt 0) { $win.Left += $e.PreviousSize.Width - $e.NewSize.Width }
-    # e mantem o widget inteiro dentro da tela em que ele esta
+# Mantem o widget inteiro dentro da area util da tela em que ele esta (fora da barra de tarefas)
+function Set-PosicaoVisivel {
     $src = [System.Windows.PresentationSource]::FromVisual($win)
     if (-not $src) { return }
     $m = $src.CompositionTarget.TransformToDevice
     $tela = [System.Windows.Forms.Screen]::FromPoint((New-Object System.Drawing.Point ([int]($win.Left * $m.M11)), ([int]($win.Top * $m.M22)))).WorkingArea
     $win.Left = [Math]::Max($tela.Left / $m.M11, [Math]::Min($win.Left, $tela.Right / $m.M11 - $win.ActualWidth))
     $win.Top  = [Math]::Max($tela.Top / $m.M22,  [Math]::Min($win.Top,  $tela.Bottom / $m.M22 - $win.ActualHeight))
+}
+
+$win.Add_SizeChanged({
+    param($s, $e)
+    # ao encolher/crescer, mantem a borda direita no lugar (o widget fica perto da bandeja)
+    if ($e.PreviousSize.Width -gt 0) { $win.Left += $e.PreviousSize.Width - $e.NewSize.Width }
+    Set-PosicaoVisivel
 })
+$win.Add_ContentRendered({ Set-PosicaoVisivel; Save-Config })
 
 $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(1000)
@@ -550,6 +626,14 @@ $timerVoz = New-Object System.Windows.Threading.DispatcherTimer
 $timerVoz.Interval = [TimeSpan]::FromMilliseconds(50)
 $timerVoz.Add_Tick($tickVoz)
 $win.Add_Loaded({ & $tick; & $tickApps; $timer.Start(); $timerVoz.Start() })
-$win.Add_Closed({ $timer.Stop(); $timerVoz.Stop(); Stop-Ponte 'widget fechado'; Set-MicPadrao $false -Forcar; Save-Config; $mutex.ReleaseMutex() })
+$win.Add_Closed({
+    $timer.Stop(); $timerVoz.Stop(); Stop-Ponte 'widget fechado'; Set-MicPadrao $false -Forcar; Save-Config
+    $tray.Visible = $false; $tray.Dispose(); $mutex.ReleaseMutex()
+    $win.Dispatcher.InvokeShutdown()
+})
 
-[void]$win.ShowDialog()
+# Show + loop proprio (com ShowDialog, ocultar a janela encerraria o programa)
+$oculto = [bool]$cfg.Oculto
+$win.Show()
+if ($oculto) { $win.Hide(); $cfg.Oculto = $true }
+[System.Windows.Threading.Dispatcher]::Run()
